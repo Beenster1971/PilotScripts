@@ -6,7 +6,7 @@
 #   pip install -r requirements.txt pyinstaller
 #
 # Build .exe (no console):
-pyinstaller --noconsole --onefile --name SimBriefRTWeb simbrief_rtf_webview_app.py
+pyinstaller --noconsole --onefile --name app.py
 
 Write-Host ""
 Write-Host "Build complete. EXE at: dist\SimBriefRTWeb.exe"
