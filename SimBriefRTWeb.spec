@@ -2,7 +2,7 @@
 
 
 a = Analysis(
-    ['simbrief_rtf_webview_app.py'],
+    ['app.py'],
     pathex=[],
     binaries=[],
     datas=[],

@@ -18,3 +18,10 @@ Notes:
     https://developer.microsoft.com/microsoft-edge/webview2/#download-section
   - Internet connection is required to fetch your SimBrief OFP.
   - No external browser windows are opened.
+
+# SimBrief → VFR/IFR Radio Scripts (Streamlit)
+
+## Local run
+```bash
+pip install -r requirements.txt
+streamlit run streamlit_app.py
