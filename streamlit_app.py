@@ -6,36 +6,66 @@ from simbrief_core import fetch_ofp, extract_fields, build_vfr, build_ifr
 st.set_page_config(page_title="SimBrief → VFR/IFR Scripts", layout="wide")
 
 # --- state
-if "vals" not in st.session_state: st.session_state["vals"] = None
-if "expanded_script" not in st.session_state: st.session_state["expanded_script"] = None  # None | 'vfr' | 'ifr'
-if "font_vfr" not in st.session_state: st.session_state["font_vfr"] = 16  # px
-if "font_ifr" not in st.session_state: st.session_state["font_ifr"] = 16  # px
+ss = st.session_state
+ss.setdefault("vals", None)
+ss.setdefault("expanded_script", None)   # None | 'vfr' | 'ifr'
+ss.setdefault("font_vfr", 16)           # px
+ss.setdefault("font_ifr", 16)           # px
+ss.setdefault("left_visible", True)     # << show/hide inputs panel
 
-st.markdown(
-    """
-    <style>
-      .block-container { padding-top: 1.0rem; padding-bottom: 1rem; }
-      /* iPad-friendly buttons */
-      .touch-btn > button { padding: 0.6rem 0.9rem; font-size: 1rem; }
-      .touch-icon > button { padding: 0.55rem 0.75rem; font-size: 1.1rem; }
-      .tight-row { margin-top: 0.25rem; margin-bottom: 0.25rem; }
-    </style>
-    """,
-    unsafe_allow_html=True,
-)
+# --- styles (floating FAB + touch)
+st.markdown("""
+<style>
+  .block-container { padding-top: 0.8rem; padding-bottom: 0.5rem; }
+  .fab {
+    position: fixed; top: 12px; left: 12px; z-index: 9999;
+    background: #2e7df6; color: #fff; border-radius: 10px;
+    padding: 10px 14px; font-weight: 600; cursor: pointer;
+    box-shadow: 0 2px 10px rgba(0,0,0,.35); user-select:none;
+  }
+  .fab:hover { filter: brightness(1.05); }
+  .tight-row { margin-top: .25rem; margin-bottom: .25rem; }
+  .touch-btn > button { padding: .6rem .9rem; font-size: 1rem; }
+</style>
+""", unsafe_allow_html=True)
+
+# Floating hamburger when inputs hidden
+if not ss.left_visible:
+    if st.button("≡  Inputs", key="fab_open", help="Show inputs", type="primary"):
+        ss.left_visible = True
+        st.rerun()
+    # Move the button into a floating position via HTML overlay (keeps Streamlit semantics)
+    st.markdown(
+        "<script>var btn=document.querySelector('button[kind=primary][data-testid=\"baseButton-secondary\"][aria-label=\"fab_open\"]');</script>",
+        unsafe_allow_html=True
+    )
+    st.markdown('<div class="fab" onclick="document.querySelector(\'[data-testid=\\\'baseButton-secondary\\\'][aria-label=\\\'fab_open\\\']\').click()">≡ Inputs</div>',
+                unsafe_allow_html=True)
 
 st.title("🎙️ SimBrief → VFR/IFR Radio Scripts")
 
-# 2-column layout (left controls, right scripts)
-col_left, col_right = st.columns([0.95, 2.05], gap="large")
+# Layout: either full-width scripts or 2 columns
+if ss.left_visible:
+    col_left, col_right = st.columns([0.95, 2.05], gap="large")
+else:
+    col_right = st.container()
+    col_left = None
 
-with col_left:
-    with st.expander("Inputs", expanded=True):  # collapsible left pane
+# --------------- LEFT PANEL (visible only when left_visible) ---------------
+if ss.left_visible:
+    with col_left:
+        top_cols = st.columns([1, 0.45])
+        with top_cols[0]:
+            st.markdown("#### Inputs")
+        with top_cols[1]:
+            if st.button("⮜ Hide", key="btn_hide_left", use_container_width=True, help="Hide inputs panel"):
+                ss.left_visible = False
+                st.rerun()
+
         sim_id = st.text_input("SimBrief ID (username or numeric Pilot ID)", value="548969")
         include_vfr = st.checkbox("Output VFR", value=True)
         include_ifr = st.checkbox("Output IFR", value=True)
 
-        # Fetch in left pane just under checkboxes
         fetch = st.button("Fetch & Build Scripts", type="primary")
 
         st.subheader("Manual fields (not in OFP)")
@@ -59,37 +89,43 @@ with col_left:
         if fetch:
             try:
                 mode, payload, raw = fetch_ofp(sim_id.strip() or "548969")
-                st.session_state.vals = extract_fields(mode, payload)
+                ss.vals = extract_fields(mode, payload)
                 st.success("Fetched OFP and extracted fields.")
             except Exception as e:
-                st.session_state.vals = None
+                ss.vals = None
                 st.error(f"Failed to fetch/extract OFP: {e}")
 
-    # Extracted fields at the bottom of the left pane
-    with st.expander("Extracted fields (debug)", expanded=False):
-        if st.session_state.vals:
-            st.json(st.session_state.vals)
-        else:
-            st.caption("Nothing fetched yet.")
+        with st.expander("Extracted fields (debug)", expanded=False):
+            if ss.vals: st.json(ss.vals)
+            else: st.caption("Nothing fetched yet.")
 
+# --------------- RIGHT PANEL (SCRIPTS) ---------------
 with col_right:
-    vals = st.session_state.vals
+    vals = ss.vals
     if not vals:
-        st.info("Enter SimBrief ID and tap **Fetch & Build Scripts** in the left pane.")
+        st.info("Enter SimBrief ID and click **Fetch & Build Scripts** in the inputs panel.")
     else:
-        # Build scripts
+        # Use last-known inputs if left panel hidden (so scripts still render)
+        def get(k, default):
+            return locals()[k] if (ss.left_visible and (k in locals())) else default
+
         vfr_text = ifr_text = ""
-        if include_vfr:
-            vfr_text = build_vfr(vals, hold, wind, atis, qnh, alt, dep_rwy_fb, arr_rwy_fb,
-                                 pos, timez, next_pt, eta, dist_dir)
-        if include_ifr:
-            ifr_text = build_ifr(vals, hold, wind, atis, qnh, clevel, squawk, alt, dep_rwy_fb, arr_rwy_fb)
+        if not ss.left_visible or get("include_vfr", True):
+            vfr_text = build_vfr(vals,
+                                 get("hold","A1"), get("wind","240/12"), get("atis","Alpha"), get("qnh","1013"),
+                                 get("alt","2400"), get("dep_rwy_fb","27"), get("arr_rwy_fb","27"),
+                                 get("pos","over Grafham Water VRP"), get("timez","1522"),
+                                 get("next_pt","St Neots VRP"), get("eta","1530"), get("dist_dir","8 miles south"))
+        if not ss.left_visible or get("include_ifr", True):
+            ifr_text = build_ifr(vals,
+                                 get("hold","A1"), get("wind","240/12"), get("atis","Alpha"), get("qnh","1013"),
+                                 get("clevel","6000"), get("squawk","4721"), get("alt","2400"),
+                                 get("dep_rwy_fb","27"), get("arr_rwy_fb","27"))
 
         def set_expand(kind: str):
-            st.session_state.expanded_script = (None if st.session_state.expanded_script == kind else kind)
+            ss.expanded_script = (None if ss.expanded_script == kind else kind)
 
-        def render_code_block(code_text: str, font_px: int, key: str):
-            """Render pre/code with a specified font size (HTML escaped)."""
+        def render_code_block(code_text: str, font_px: int):
             safe = html.escape(code_text)
             st.markdown(
                 f"""
@@ -101,53 +137,41 @@ with col_right:
             )
 
         def script_box(title: str, text: str, kind: str):
-            if not text:
-                return
-            expanded = (st.session_state.expanded_script == kind)
-            # choose which font size state to use
+            if not text: return
+            expanded = (ss.expanded_script == kind)
             font_key = "font_vfr" if kind == "vfr" else "font_ifr"
-            font_px = st.session_state[font_key]
+            font_px = ss[font_key]
 
-            # Header row: title, expand/restore, download, font +/- (touch friendly)
-            c1, c2, c3, c4, c5 = st.columns([1.4, 1.1, 1.7, 0.7, 0.7])  # balanced for iPad
+            c1, c2, c3, c4, c5 = st.columns([1.4, 1.1, 1.7, 0.7, 0.7])
             with c1: st.subheader(title)
             with c2:
                 if expanded:
-                    if st.button("Restore split", key=f"restore_{kind}", help="Show both scripts", use_container_width=True):
-                        set_expand(kind)  # toggles back to None
+                    if st.button("Restore split", key=f"restore_{kind}", use_container_width=True):
+                        set_expand(kind); st.rerun()
                 else:
-                    if st.button(f"Expand {kind.upper()}", key=f"expand_{kind}", help="Fill the right column", use_container_width=True):
-                        set_expand(kind)
+                    if st.button(f"Expand {kind.upper()}", key=f"expand_{kind}", use_container_width=True):
+                        set_expand(kind); st.rerun()
             with c3:
                 st.download_button(
-                    f"Download {kind.upper()} (.txt)",
-                    data=text,
-                    file_name=f"{kind.upper()}_script.txt",
-                    mime="text/plain",
-                    key=f"dl_{kind}",
-                    use_container_width=True,
+                    f"Download {kind.upper()} (.txt)", data=text,
+                    file_name=f"{kind.upper()}_script.txt", mime="text/plain",
+                    key=f"dl_{kind}", use_container_width=True
                 )
-            # A− / A+ buttons, nice big hit area for tablets
             with c4:
-                if st.container().button("A−", key=f"dec_{kind}", help="Decrease font size", type="secondary"):
-                    st.session_state[font_key] = max(12, font_px - 2)
-                    st.rerun()
+                if st.button("A−", key=f"dec_{kind}", type="secondary", use_container_width=True):
+                    ss[font_key] = max(12, font_px - 2); st.rerun()
             with c5:
-                if st.container().button("A+", key=f"inc_{kind}", help="Increase font size", type="secondary"):
-                    st.session_state[font_key] = min(36, font_px + 2)
-                    st.rerun()
+                if st.button("A+", key=f"inc_{kind}", type="secondary", use_container_width=True):
+                    ss[font_key] = min(36, font_px + 2); st.rerun()
 
-            # The code itself
-            render_code_block(text, st.session_state[font_key], key=f"code_{kind}")
+            render_code_block(text, ss[font_key])
 
-        # Expanded logic: show one or both
-        if st.session_state.expanded_script in (None, 'vfr'):
+        if ss.expanded_script in (None, 'vfr'):
             script_box("VFR Script", vfr_text, "vfr")
             st.markdown("<div class='tight-row'></div>", unsafe_allow_html=True)
-        if st.session_state.expanded_script in (None, 'ifr'):
+        if ss.expanded_script in (None, 'ifr'):
             script_box("IFR Script", ifr_text, "ifr")
 
-        # Combined download
         if vfr_text or ifr_text:
             combined = ""
             if vfr_text: combined += "=== VFR Script ===\n" + vfr_text + "\n\n"
