@@ -18,40 +18,38 @@ st.markdown("""
 <style>
   .block-container { padding-top: 0.8rem; padding-bottom: 0.5rem; }
 
-  /* FAB (hamburger) – icon only, always visible, not clipped */
-  .fab {
-    position: fixed; top: 66px; left: 14px; z-index: 9999;
+  /* Fixed hamburger (native Streamlit button inside a fixed wrapper) */
+  .fab-wrap { position: fixed; top: 66px; left: 14px; z-index: 9999; }
+  .fab-wrap button {
     width: 42px; height: 42px; border-radius: 10px;
-    background: #2e7df6; color: #fff; display:flex; align-items:center; justify-content:center;
-    font-size: 22px; font-weight: 700; cursor: pointer; user-select: none;
-    box-shadow: 0 2px 10px rgba(0,0,0,.35);
+    font-size: 22px; font-weight: 700;
+    padding: 0; line-height: 1; text-align: center;
   }
-  .fab:hover { filter: brightness(1.06); }
 
-  /* “Checkbox row” styling (single-column table look) */
-  div[data-testid="stCheckbox"] {
-    border-bottom: 1px solid rgba(255,255,255,0.08);
-    padding: 10px 8px 10px 8px;
-    margin: 0;
+  /* Single-column call rows using the checkbox widget */
+  /* Each row is a checkbox widget container */
+  [data-testid="stCheckbox"] {
+    border-bottom: 1px solid rgba(255,255,255,0.10);
+    margin: 0; padding: 10px 0;
   }
-  /* hide the checkbox square but keep label clickable */
-  div[data-testid="stCheckbox"] input[type="checkbox"] {
-    width: 0; height: 0; opacity: 0; position: absolute;
+  /* Hide the stock checkbox box, keep it focusable/clickable */
+  [data-testid="stCheckbox"] input[type="checkbox"] {
+    position: absolute; opacity: 0; width: 0; height: 0;
   }
-  /* make label fill the row and wrap nicely */
-  div[data-testid="stCheckbox"] label {
-    width: 100%;
-    display: block;
-    cursor: pointer;
-    margin: 0;
+  /* Label becomes the full-width row hit-target */
+  [data-testid="stCheckbox"] label {
+    display: block; width: 100%; cursor: pointer; margin: 0;
   }
-  /* bump font-size dynamically per script inlined style */
-  div[data-testid="stCheckbox"] label p { margin: 0; }
+  /* Streamlit wraps label text in a <p> – we style it for font/line-height */
+  [data-testid="stCheckbox"] label p {
+    margin: 0; white-space: pre-wrap; word-break: break-word;
+  }
 
-  /* auto-dim a row when its input is checked (uses :has(), supported in modern Chromium/Safari) */
-  div[data-testid="stCheckbox"]:has(input:checked) {
-    opacity: .45;
-  }
+  /* “Dim” a completed row */
+  [data-testid="stCheckbox"]:has(input:checked) { opacity: 0.45; }
+
+  /* Optional: hover affordance */
+  [data-testid="stCheckbox"] label:hover { filter: brightness(1.04); }
 </style>
 """, unsafe_allow_html=True)
 
@@ -70,6 +68,16 @@ if not ss.left_visible:
     fab()
 
 st.title("🎙️ SimBrief → VFR/IFR Radio Scripts")
+
+# HAMBURGER – native st.button in a fixed wrapper (always works)
+col_hamburger = st.container()
+with col_hamburger:
+    st.markdown('<div class="fab-wrap">', unsafe_allow_html=True)
+    if not st.session_state.get("left_visible", True):
+        if st.button("≡", key="show_inputs_hamburger"):
+            st.session_state["left_visible"] = True
+            st.rerun()
+    st.markdown('</div>', unsafe_allow_html=True)
 
 # ---------- layout
 if ss.left_visible:
@@ -152,23 +160,23 @@ with col_right:
 
         # row renderer using checkboxes as row items (box hidden; label is the row)
         def render_rows(script_text: str, kind: str, font_px: int):
+            """
+            Render each radio line as a full-width tappable row.
+            - Uses native st.checkbox for state (box hidden via CSS).
+            - The label is the entire row; tapping toggles 'done'.
+            - Wraps text; subtle delimiter between rows.
+            """
             if not script_text:
                 return
             rows = [ln.strip() for ln in script_text.split("\n") if ln.strip()]
-
             st.caption(f"{len(rows)} calls")
-            # render each line as a checkbox row; key keeps state
+
+            # Render one Streamlit checkbox per line (state stored per row key)
             for i, ln in enumerate(rows):
-                checked = st.checkbox(
-                    label=ln,
-                    key=f"{kind}_row_{i}",
-                    value=st.session_state.get(f"{kind}_row_{i}", False),
-                    help="Tap to mark/unmark",
-                )
-                # per-row font size (apply via inline style on the markdown label)
-                # Streamlit wraps label content in <p>, which we style globally; to bump size per script,
-                # wrap once with markdown underneath:
+                key = f"{kind}_row_{i}"
+                # Force the font-size for this row by injecting a zero-height marker before it
                 st.markdown(f"<div style='height:0;font-size:{font_px}px'></div>", unsafe_allow_html=True)
+                st.checkbox(ln, key=key)
 
         def script_box(title: str, text: str, kind: str):
             if not text: return
