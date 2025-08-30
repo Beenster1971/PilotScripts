@@ -18,8 +18,8 @@ st.markdown("""
 <style>
   .block-container { padding-top: 0.8rem; padding-bottom: 0.5rem; }
 
-  /* Fixed hamburger (native Streamlit button inside a fixed wrapper) */
-  .fab-wrap { position: fixed; top: 66px; left: 14px; z-index: 9999; }
+  /* Single, native hamburger (only when inputs are hidden) */
+  .fab-wrap { position: fixed; top: 88px; left: 14px; z-index: 9999; }
   .fab-wrap button {
     width: 42px; height: 42px; border-radius: 10px;
     font-size: 22px; font-weight: 700;
@@ -27,57 +27,38 @@ st.markdown("""
   }
 
   /* Single-column call rows using the checkbox widget */
-  /* Each row is a checkbox widget container */
-  [data-testid="stCheckbox"] {
+  [data-testid="stCheckbox"]{
     border-bottom: 1px solid rgba(255,255,255,0.10);
-    margin: 0; padding: 10px 0;
+    margin: 0; padding: 12px 0;
   }
-  /* Hide the stock checkbox box, keep it focusable/clickable */
-  [data-testid="stCheckbox"] input[type="checkbox"] {
-    position: absolute; opacity: 0; width: 0; height: 0;
+  /* Hide the stock box hard (with specificity + !important) */
+  [data-testid="stCheckbox"] > div:first-child input[type="checkbox"]{
+    position: absolute !important; opacity: 0 !important;
+    width: 0 !important; height: 0 !important; pointer-events: none !important;
   }
-  /* Label becomes the full-width row hit-target */
-  [data-testid="stCheckbox"] label {
-    display: block; width: 100%; cursor: pointer; margin: 0;
+  /* Make the label the full row hit target */
+  [data-testid="stCheckbox"] label{
+    display: block !important; width: 100% !important; cursor: pointer !important; margin: 0 !important;
+    padding-left: 0 !important;
   }
-  /* Streamlit wraps label text in a <p> – we style it for font/line-height */
-  [data-testid="stCheckbox"] label p {
-    margin: 0; white-space: pre-wrap; word-break: break-word;
+  /* Streamlit wraps label text in <p> */
+  [data-testid="stCheckbox"] label p{
+    margin: 0 !important; white-space: pre-wrap !important; word-break: break-word !important;
   }
-
-  /* “Dim” a completed row */
-  [data-testid="stCheckbox"]:has(input:checked) { opacity: 0.45; }
-
-  /* Optional: hover affordance */
-  [data-testid="stCheckbox"] label:hover { filter: brightness(1.04); }
+  /* Dim a completed row */
+  [data-testid="stCheckbox"]:has(input:checked){ opacity: .45; }
 </style>
 """, unsafe_allow_html=True)
 
-# ---------- FAB (only when inputs hidden) ----------
-def fab():
-    st.markdown(
-        '<div class="fab" onclick="document.querySelector(\'button[aria-label=\\\'fab_open\\\']\').click()">≡</div>',
-        unsafe_allow_html=True
-    )
-
-# invisible button used by the FAB to trigger a Streamlit action (no extra visible UI)
-if not ss.left_visible:
-    if st.button("open_inputs", key="fab_open", help="Show inputs", type="primary"):
-        ss.left_visible = True
+# Single, native hamburger (only visible when inputs panel is hidden)
+st.markdown('<div class="fab-wrap">', unsafe_allow_html=True)
+if not st.session_state.get("left_visible", True):
+    if st.button("≡", key="show_inputs_hamburger"):
+        st.session_state["left_visible"] = True
         st.rerun()
-    fab()
+st.markdown('</div>', unsafe_allow_html=True)
 
 st.title("🎙️ SimBrief → VFR/IFR Radio Scripts")
-
-# HAMBURGER – native st.button in a fixed wrapper (always works)
-col_hamburger = st.container()
-with col_hamburger:
-    st.markdown('<div class="fab-wrap">', unsafe_allow_html=True)
-    if not st.session_state.get("left_visible", True):
-        if st.button("≡", key="show_inputs_hamburger"):
-            st.session_state["left_visible"] = True
-            st.rerun()
-    st.markdown('</div>', unsafe_allow_html=True)
 
 # ---------- layout
 if ss.left_visible:
