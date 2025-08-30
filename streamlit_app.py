@@ -9,38 +9,51 @@ st.set_page_config(page_title="SimBrief → VFR/IFR Scripts", layout="wide")
 ss = st.session_state
 ss.setdefault("vals", None)
 ss.setdefault("expanded_script", None)   # None | 'vfr' | 'ifr'
-ss.setdefault("font_vfr", 16)           # px
-ss.setdefault("font_ifr", 16)           # px
-ss.setdefault("left_visible", True)     # << show/hide inputs panel
+ss.setdefault("font_vfr", 18)           # px default a bit larger
+ss.setdefault("font_ifr", 18)           # px
+ss.setdefault("left_visible", True)     # show/hide inputs panel
+ss.setdefault("done_vfr", set())        # indices of completed VFR rows
+ss.setdefault("done_ifr", set())        # indices of completed IFR rows
 
-# --- styles (floating FAB + touch)
+# --- styles (FAB position fixed so it's not clipped; row visuals + wrapping)
 st.markdown("""
 <style>
   .block-container { padding-top: 0.8rem; padding-bottom: 0.5rem; }
+  /* Floating hamburger — drop below Streamlit header so it's never clipped */
   .fab {
-    position: fixed; top: 12px; left: 12px; z-index: 9999;
+    position: fixed; top: 68px; left: 14px; z-index: 9999;
     background: #2e7df6; color: #fff; border-radius: 10px;
     padding: 10px 14px; font-weight: 600; cursor: pointer;
-    box-shadow: 0 2px 10px rgba(0,0,0,.35); user-select:none;
+    box-shadow: 0 2px 10px rgba(0,0,0,.35); user-select: none;
   }
   .fab:hover { filter: brightness(1.05); }
   .tight-row { margin-top: .25rem; margin-bottom: .25rem; }
-  .touch-btn > button { padding: .6rem .9rem; font-size: 1rem; }
+  /* Script rows */
+  .call-row {
+    display: flex; gap: 10px; align-items: flex-start;
+    padding: 10px 8px; border-bottom: 1px solid rgba(255,255,255,0.08);
+  }
+  .call-row:last-child { border-bottom: 0; }
+  .call-btn > button {
+    min-width: 40px; padding: 0.45rem 0.6rem; font-size: 1.05rem;
+  }
+  .call-text {
+    flex: 1 1 auto; white-space: pre-wrap; word-break: break-word;
+  }
+  .call-dim { opacity: 0.45; }
 </style>
 """, unsafe_allow_html=True)
 
 # Floating hamburger when inputs hidden
 if not ss.left_visible:
+    # the following button exists just to trigger a Streamlit action; we click it via the FAB div
     if st.button("≡  Inputs", key="fab_open", help="Show inputs", type="primary"):
         ss.left_visible = True
         st.rerun()
-    # Move the button into a floating position via HTML overlay (keeps Streamlit semantics)
     st.markdown(
-        "<script>var btn=document.querySelector('button[kind=primary][data-testid=\"baseButton-secondary\"][aria-label=\"fab_open\"]');</script>",
+        '<div class="fab" onclick="document.querySelector(\'button[aria-label=\\\'fab_open\\\']\').click()">≡ Inputs</div>',
         unsafe_allow_html=True
     )
-    st.markdown('<div class="fab" onclick="document.querySelector(\'[data-testid=\\\'baseButton-secondary\\\'][aria-label=\\\'fab_open\\\']\').click()">≡ Inputs</div>',
-                unsafe_allow_html=True)
 
 st.title("🎙️ SimBrief → VFR/IFR Radio Scripts")
 
@@ -51,7 +64,7 @@ else:
     col_right = st.container()
     col_left = None
 
-# --------------- LEFT PANEL (visible only when left_visible) ---------------
+# --------------- LEFT PANEL ---------------
 if ss.left_visible:
     with col_left:
         top_cols = st.columns([1, 0.45])
@@ -65,7 +78,6 @@ if ss.left_visible:
         sim_id = st.text_input("SimBrief ID (username or numeric Pilot ID)", value="548969")
         include_vfr = st.checkbox("Output VFR", value=True)
         include_ifr = st.checkbox("Output IFR", value=True)
-
         fetch = st.button("Fetch & Build Scripts", type="primary")
 
         st.subheader("Manual fields (not in OFP)")
@@ -91,6 +103,9 @@ if ss.left_visible:
                 mode, payload, raw = fetch_ofp(sim_id.strip() or "548969")
                 ss.vals = extract_fields(mode, payload)
                 st.success("Fetched OFP and extracted fields.")
+                # reset completion marks on new fetch
+                ss.done_vfr = set()
+                ss.done_ifr = set()
             except Exception as e:
                 ss.vals = None
                 st.error(f"Failed to fetch/extract OFP: {e}")
@@ -125,16 +140,44 @@ with col_right:
         def set_expand(kind: str):
             ss.expanded_script = (None if ss.expanded_script == kind else kind)
 
-        def render_code_block(code_text: str, font_px: int):
-            safe = html.escape(code_text)
-            st.markdown(
-                f"""
-                <div style="font-size:{font_px}px; line-height:1.5;">
-                  <pre style="white-space:pre-wrap; margin:0;">{safe}</pre>
-                </div>
-                """,
-                unsafe_allow_html=True,
-            )
+        def render_rows(text: str, kind: str, font_px: int):
+            """
+            Render each radio line as a tappable row:
+            - Subtle divider between rows
+            - Tap button dims/undims the line (toggle)
+            - Text wraps and respects font size
+            """
+            if not text: return
+            rows = [ln.strip() for ln in text.split("\n") if ln.strip()]
+            done_set = ss.done_vfr if kind == "vfr" else ss.done_ifr
+
+            # Reset/clear controls
+            cA, cB, cC = st.columns([1, .8, .8])
+            with cA: st.caption(f"{len(rows)} calls")
+            with cB:
+                if st.button("Reset marks", key=f"reset_{kind}", use_container_width=True):
+                    done_set.clear(); st.rerun()
+            with cC:
+                if st.button("Mark all", key=f"markall_{kind}", use_container_width=True):
+                    done_set.clear(); done_set.update(range(len(rows))); st.rerun()
+
+            for i, ln in enumerate(rows):
+                c1, c2 = st.columns([0.12, 0.88])
+                with c1:
+                    lab = "✓" if i in done_set else "•"
+                    if st.container().button(lab, key=f"btn_{kind}_{i}", help="Tap to toggle", use_container_width=True):
+                        if i in done_set: done_set.remove(i)
+                        else: done_set.add(i)
+                        st.rerun()
+                with c2:
+                    safe = html.escape(ln)
+                    dim = " call-dim" if i in done_set else ""
+                    st.markdown(
+                        f"""<div class="call-row">
+                                <div class="call-text{dim}" style="font-size:{font_px}px; line-height:1.55;">{safe}</div>
+                            </div>""",
+                        unsafe_allow_html=True
+                    )
 
         def script_box(title: str, text: str, kind: str):
             if not text: return
@@ -162,9 +205,10 @@ with col_right:
                     ss[font_key] = max(12, font_px - 2); st.rerun()
             with c5:
                 if st.button("A+", key=f"inc_{kind}", type="secondary", use_container_width=True):
-                    ss[font_key] = min(36, font_px + 2); st.rerun()
+                    ss[font_key] = min(40, font_px + 2); st.rerun()
 
-            render_code_block(text, ss[font_key])
+            # the new row-based renderer
+            render_rows(text, kind, ss[font_key])
 
         if ss.expanded_script in (None, 'vfr'):
             script_box("VFR Script", vfr_text, "vfr")
@@ -172,8 +216,10 @@ with col_right:
         if ss.expanded_script in (None, 'ifr'):
             script_box("IFR Script", ifr_text, "ifr")
 
+        # Combined download
         if vfr_text or ifr_text:
             combined = ""
             if vfr_text: combined += "=== VFR Script ===\n" + vfr_text + "\n\n"
             if ifr_text: combined += "=== IFR Script ===\n" + ifr_text
-            st.download_button("Download Combined (.txt)", data=combined, file_name="RT_Scripts.txt", mime="text/plain", key="dl_both", use_container_width=True)
+            st.download_button("Download Combined (.txt)", data=combined, file_name="RT_Scripts.txt",
+                               mime="text/plain", key="dl_both", use_container_width=True)
