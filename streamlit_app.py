@@ -9,73 +9,51 @@ ss = st.session_state
 ss.setdefault("vals", None)
 ss.setdefault("expanded_script", None)   # None | 'vfr' | 'ifr'
 ss.setdefault("left_visible", True)
-# Single global font size for all script rows (simpler + reliable)
-ss.setdefault("font_px", 28)             # default bigger as requested
+ss.setdefault("font_px", 28)             # global font size for script rows
 
 # ---------- GLOBAL CSS ----------
-# Important: widgets aren’t children of your HTML wrappers,
-# so use GLOBAL selectors and a single CSS var for size.
 st.markdown(f"""
 <style>
   .block-container {{ padding-top: 0.8rem; padding-bottom: 0.5rem; }}
 
-  /* Single global font size for rows (A−/A+ updates this var) */
-  :root {{
-    --script-font: {ss.get('font_px', 28)}px;
-  }}
+  /* Global font size for script rows */
+  :root {{ --script-font: {ss.get('font_px', 28)}px; }}
 
-  /* Fixed hamburger (only when inputs hidden) — above the title with padding */
+  /* Hamburger above title (only when inputs are hidden) */
   .fab-wrap {{
     position: fixed; top: 24px; left: 16px; z-index: 9999;
   }}
   .fab-wrap button {{
     width: 42px; height: 42px; border-radius: 10px;
-    font-size: 22px; font-weight: 700; padding: 0;
-    line-height: 1; text-align: center;
+    font-size: 22px; font-weight: 700; padding: 0; line-height: 1;
+    text-align: center;
   }}
 
-  /* --- Script rows (checkbox-based) --- */
-  /* Each row container */
-  [data-testid="stCheckbox"] {{
-    border-bottom: 1px solid rgba(255,255,255,0.10);
-    margin: 0; padding: 12px 0;
+  /* ====== SCRIPT AREA ONLY ====== */
+  #scripts .row-btn > button {{
+    width: 100%;
+    text-align: left;
+    padding: 10px 0;
+    background: transparent;
+    border: 0;
+    box-shadow: none;
   }}
-
-  /* Hide all visible checkbox UI while keeping the input for state */
-  [data-testid="stCheckbox"] input[type="checkbox"] {{
-    position: absolute !important;
-    opacity: 0 !important;
-    width: 0 !important; height: 0 !important;
-    margin: 0 !important; padding: 0 !important;
+  #scripts .row-btn > button div p {{
+    margin: 0;
+    white-space: pre-wrap; word-break: break-word;
+    font-size: var(--script-font);
+    line-height: 1.55;
   }}
-  [data-testid="stCheckbox"] div[role="checkbox"],
-  [data-testid="stCheckbox"] svg {{
-    opacity: 0 !important;
-    width: 0 !important; height: 0 !important;
-    pointer-events: none !important;
-    position: absolute !important;
+  #scripts .row-sep {{
+    height: 1px;
+    background: rgba(255,255,255,0.10);
+    margin: 4px 0 12px 0;
   }}
-
-  /* Make the label the full-width, tappable row */
-  [data-testid="stCheckbox"] label {{
-    display: block !important; width: 100% !important;
-    cursor: pointer !important; margin: 0 !important; padding-left: 0 !important;
-  }}
-
-  /* Row text: wrap + global font size */
-  [data-testid="stCheckbox"] label p {{
-    margin: 0 !important;
-    white-space: pre-wrap !important; word-break: break-word !important;
-    font-size: var(--script-font); line-height: 1.55;
-  }}
-
-  /* Dim completed rows */
-  [data-testid="stCheckbox"]:has(input:checked) {{ opacity: .45; }}
+  #scripts .dim > button div p {{ opacity: .45; }}
 </style>
 """, unsafe_allow_html=True)
 
 # ---------- HAMBURGER (place above title) ----------
-# If you want this literally above the title, keep it exactly here.
 if not ss.left_visible:
     st.markdown('<div class="fab-wrap">', unsafe_allow_html=True)
     if st.button("≡", key="hamburger_show_inputs"):
@@ -132,6 +110,10 @@ if ss.left_visible:
                 mode, payload, raw = fetch_ofp(sim_id.strip() or "548969")
                 ss.vals = extract_fields(mode, payload)
                 st.success("Fetched OFP and extracted fields.")
+                # reset line states on new fetch
+                for k in list(ss.keys()):
+                    if k.startswith("vfr_done_") or k.startswith("ifr_done_"):
+                        del ss[k]
             except Exception as e:
                 ss.vals = None
                 st.error(f"Failed to fetch/extract OFP: {e}")
@@ -148,7 +130,7 @@ with col_right:
     if not vals:
         st.info("Enter SimBrief ID and click **Fetch & Build Scripts** in the inputs panel.")
     else:
-        # fallback values when inputs hidden
+        # fallback getter when left panel is hidden
         def get(k, default):
             return locals()[k] if (ss.left_visible and (k in locals())) else default
 
@@ -187,15 +169,26 @@ with col_right:
         def set_expand(kind: str):
             ss.expanded_script = None if ss.expanded_script == kind else kind
 
+        # ---- Row renderer: full-width button rows (toggle dim) ----
         def render_rows(script_text: str, kind: str):
             if not script_text:
                 return
             rows = [ln.strip() for ln in script_text.split("\n") if ln.strip()]
             st.caption(f"{len(rows)} calls")
-            for i, ln in enumerate(rows):
-                # State per line; the UI for the box is hidden via CSS, but the label stays tappable
-                st.checkbox(ln, key=f"{kind}_row_{i}")
 
+            for i, ln in enumerate(rows):
+                state_key = f"{kind}_done_{i}"
+                done = ss.get(state_key, False)
+                row_class = "dim" if done else ""
+                st.markdown(f"<div class='row-btn {row_class}'>", unsafe_allow_html=True)
+                # use_container_width + type=secondary keeps it subtle and wide
+                if st.button(ln, key=f"{kind}_btn_{i}", use_container_width=True, type="secondary"):
+                    ss[state_key] = not done
+                    st.rerun()
+                st.markdown("</div>", unsafe_allow_html=True)
+                st.markdown("<div class='row-sep'></div>", unsafe_allow_html=True)
+
+        # ---- Script box with controls ----
         def script_box(title: str, text: str, kind: str):
             if not text:
                 return
@@ -219,15 +212,18 @@ with col_right:
                     key=f"dl_{kind}",
                     use_container_width=True,
                 )
-            # A− / A+: single global font size for both lists
+            # A− / A+ control the single global font size
             with c4:
                 if st.button("A−", key=f"dec_{kind}", type="secondary", use_container_width=True):
-                    ss["font_px"] = max(14, ss["font_px"] - 2); st.rerun()
+                    ss["font_px"] = max(16, ss["font_px"] - 2); st.rerun()
             with c5:
                 if st.button("A+", key=f"inc_{kind}", type="secondary", use_container_width=True):
-                    ss["font_px"] = min(44, ss["font_px"] + 2); st.rerun()
+                    ss["font_px"] = min(48, ss["font_px"] + 2); st.rerun()
 
             render_rows(text, kind)
+
+        # Scope the script area for CSS
+        st.markdown("<div id='scripts'>", unsafe_allow_html=True)
 
         if ss.expanded_script in (None, "vfr"):
             script_box("VFR Script", vfr_text, "vfr")
@@ -235,6 +231,9 @@ with col_right:
         if ss.expanded_script in (None, "ifr"):
             script_box("IFR Script", ifr_text, "ifr")
 
+        st.markdown("</div>", unsafe_allow_html=True)
+
+        # Combined download
         if vfr_text or ifr_text:
             combined = ""
             if vfr_text:
