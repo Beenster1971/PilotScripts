@@ -176,13 +176,6 @@ with col_right:
             for i, ln in enumerate(rows):
                 st.checkbox(ln, key=f"{kind}_row_{i}")
 
-            # Render one Streamlit checkbox per line (state stored per row key)
-            for i, ln in enumerate(rows):
-                key = f"{kind}_row_{i}"
-                # Force the font-size for this row by injecting a zero-height marker before it
-                st.markdown(f"<div style='height:0;font-size:{font_px}px'></div>", unsafe_allow_html=True)
-                st.checkbox(ln, key=key)
-
         def script_box(title: str, text: str, kind: str):
             if not text: return
             expanded = (ss.expanded_script == kind)
@@ -215,9 +208,6 @@ with col_right:
             st.markdown(f"<div id='{scope_id}'>", unsafe_allow_html=True)
             render_rows(text, kind, ss[font_key])   # keep your existing call
             st.markdown("</div>", unsafe_allow_html=True)
-
-            # render as single-column “table” with CSS-toggled rows
-            render_rows(text, kind, ss[font_key])
 
         if ss.expanded_script in (None, 'vfr'):
             script_box("VFR Script", vfr_text, "vfr")
