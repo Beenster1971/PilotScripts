@@ -9,46 +9,70 @@ st.set_page_config(page_title="SimBrief → VFR/IFR Scripts", layout="wide")
 ss = st.session_state
 ss.setdefault("vals", None)
 ss.setdefault("expanded_script", None)   # None | 'vfr' | 'ifr'
-ss.setdefault("font_vfr", 18)
-ss.setdefault("font_ifr", 18)
+ss.setdefault("font_vfr", 26)
+ss.setdefault("font_ifr", 26)
 ss.setdefault("left_visible", True)
 
 # --- global styles
-st.markdown("""
+st.markdown(f"""
 <style>
-  .block-container { padding-top: 0.8rem; padding-bottom: 0.5rem; }
+  .block-container {{ padding-top: 0.8rem; padding-bottom: 0.5rem; }}
+
+  /* Per-script font sizes (updated by A−/A+) */
+  :root {{
+    --font-vfr: {ss.get('font_vfr', 22)}px;
+    --font-ifr: {ss.get('font_ifr', 22)}px;
+  }}
 
   /* Single, native hamburger (only when inputs are hidden) */
-  .fab-wrap { position: fixed; top: 88px; left: 14px; z-index: 9999; }
-  .fab-wrap button {
+  .fab-wrap {{
+    position: fixed; top: 18px; left: 14px; z-index: 9999;   /* sits above the title with padding */
+  }}
+  .fab-wrap button {{
     width: 42px; height: 42px; border-radius: 10px;
     font-size: 22px; font-weight: 700;
     padding: 0; line-height: 1; text-align: center;
-  }
+  }}
 
   /* Single-column call rows using the checkbox widget */
-  [data-testid="stCheckbox"]{
+  /* Row container */
+  [data-testid="stCheckbox"] {{
     border-bottom: 1px solid rgba(255,255,255,0.10);
     margin: 0; padding: 12px 0;
-  }
-  /* Hide the stock box hard (with specificity + !important) */
-  [data-testid="stCheckbox"] > div:first-child input[type="checkbox"]{
-    position: absolute !important; opacity: 0 !important;
-    width: 0 !important; height: 0 !important; pointer-events: none !important;
-  }
-  /* Make the label the full row hit target */
-  [data-testid="stCheckbox"] label{
+  }}
+
+  /* HARD hide of the visual checkbox control (different Streamlit builds render differently),
+     keep the INPUT in the DOM so label clicks still toggle state */
+  [data-testid="stCheckbox"] input[type="checkbox"],
+  [data-testid="stCheckbox"] svg,
+  [data-testid="stCheckbox"] div[role="checkbox"],
+  [data-testid="stCheckbox"] > div:first-child > div:first-child {{
+    width: 0 !important; height: 0 !important; opacity: 0 !important;
+    pointer-events: none !important; position: absolute !important;
+  }}
+
+  /* Make label the full-width hit target */
+  [data-testid="stCheckbox"] label {{
     display: block !important; width: 100% !important; cursor: pointer !important; margin: 0 !important;
     padding-left: 0 !important;
-  }
-  /* Streamlit wraps label text in <p> */
-  [data-testid="stCheckbox"] label p{
+  }}
+
+  /* Text wraps and uses per-script font vars */
+  #vfr-scope [data-testid="stCheckbox"] label p {{ 
     margin: 0 !important; white-space: pre-wrap !important; word-break: break-word !important;
-  }
+    font-size: var(--font-vfr); line-height: 1.55;
+  }}
+  #ifr-scope [data-testid="stCheckbox"] label p {{ 
+    margin: 0 !important; white-space: pre-wrap !important; word-break: break-word !important;
+    font-size: var(--font-ifr); line-height: 1.55;
+  }}
+
   /* Dim a completed row */
-  [data-testid="stCheckbox"]:has(input:checked){ opacity: .45; }
+  [data-testid="stCheckbox"]:has(input:checked) {{ opacity: .45; }}
 </style>
 """, unsafe_allow_html=True)
+
+st.title("🎙️ SimBrief → VFR/IFR Radio Scripts")
 
 # Single, native hamburger (only visible when inputs panel is hidden)
 st.markdown('<div class="fab-wrap">', unsafe_allow_html=True)
@@ -57,8 +81,6 @@ if not st.session_state.get("left_visible", True):
         st.session_state["left_visible"] = True
         st.rerun()
 st.markdown('</div>', unsafe_allow_html=True)
-
-st.title("🎙️ SimBrief → VFR/IFR Radio Scripts")
 
 # ---------- layout
 if ss.left_visible:
@@ -151,6 +173,8 @@ with col_right:
                 return
             rows = [ln.strip() for ln in script_text.split("\n") if ln.strip()]
             st.caption(f"{len(rows)} calls")
+            for i, ln in enumerate(rows):
+                st.checkbox(ln, key=f"{kind}_row_{i}")
 
             # Render one Streamlit checkbox per line (state stored per row key)
             for i, ln in enumerate(rows):
@@ -186,6 +210,11 @@ with col_right:
             with c5:
                 if st.button("A+", key=f"inc_{kind}", type="secondary", use_container_width=True):
                     ss[font_key] = min(40, font_px + 2); st.rerun()
+
+            scope_id = "vfr-scope" if kind == "vfr" else "ifr-scope"
+            st.markdown(f"<div id='{scope_id}'>", unsafe_allow_html=True)
+            render_rows(text, kind, ss[font_key])   # keep your existing call
+            st.markdown("</div>", unsafe_allow_html=True)
 
             # render as single-column “table” with CSS-toggled rows
             render_rows(text, kind, ss[font_key])
